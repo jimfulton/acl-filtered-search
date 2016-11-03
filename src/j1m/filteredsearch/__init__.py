@@ -1,5 +1,5 @@
 
-sql = """
+template = """
 with recursive
      text_results as (%(search)s),
      allowed(docid, id, parent_docid, allowed) as (
@@ -29,6 +29,10 @@ select docid from allowed where allowed
 
 def filteredsearch(cursor, search, permission, principals):
     principals = repr(principals).replace(',)', ')')
-    cursor.execute(sql % dict(
-        search=search, permission=permission, principals=principals))
-    return cursor.fetchall()
+    sql = template % dict(
+        search=search, permission=permission, principals=principals)
+    if cursor is None:
+        print(sql)
+    else:
+        cursor.execute(sql)
+        return cursor.fetchall()
