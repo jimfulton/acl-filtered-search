@@ -2,10 +2,10 @@
 template = """
 with recursive
      text_results as (%(search)s),
-     allowed(docid, id, parent_docid, allowed) as (
-       select docid, id, parent_docid, allowed from (
+     allowed(docid, id, parent_docid, allowed %(extra)s) as (
+       select docid, id, parent_docid, allowed %(extra)s from (
          select distinct on (r.docid)
-                r.docid, r.docid as id, p.parent_docid, a.allowed
+                r.docid, r.docid as id, p.parent_docid, a.allowed %(extra)s
          from text_results r
          join parents p using (docid)
          left join ace a on (
@@ -16,10 +16,10 @@ with recursive
          order by r.docid, a.ord
          ) base
      union all
-       select docid, id, parent_docid, allowed from (
+       select docid, id, parent_docid, allowed %(extra)s from (
          select distinct on (p.docid)
-                p.docid, p.id, p.parent_docid, a.allowed
-         from (select allowed.docid, p.docid as id, p.parent_docid
+                p.docid, p.id, p.parent_docid, a.allowed %(extra)s
+         from (select allowed.docid, p.docid as id, p.parent_docid %(extra)s
                from allowed, parents p
                where allowed.allowed is null and
                      allowed.parent_docid = p.docid) p
@@ -31,14 +31,15 @@ with recursive
          order by p.docid, a.ord
          ) recursive
      )
-select docid from allowed where allowed
+select docid %(extra)s from allowed where allowed
 
 """
 
-def filteredsearch(cursor, search, permission, principals):
+def filteredsearch(cursor, search, permission, principals, extra=''):
     principals = repr(principals).replace(',)', ')')
     sql = template % dict(
-        search=search, permission=permission, principals=principals)
+        search=search, permission=permission, principals=principals,
+        extra=extra)
     if cursor is None:
         print(sql)
     else:
