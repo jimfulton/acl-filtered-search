@@ -17,6 +17,8 @@ class Tests(unittest.TestCase):
         def newdoc(docid, parent_docid):
             ex("insert into docs values(%s)", (docid,))
             ex("insert into parents values(%s, %s)", (docid, parent_docid))
+            ex("insert into ace values(%s, true, 'decoy', 'decoy', -1)",
+               (docid,))
 
         for i in range(1, 4):
             newdoc(i, 0)
@@ -34,8 +36,10 @@ class Tests(unittest.TestCase):
                             newdoc(m, l)
 
     def ace(self, *aces):
-        for order, (docid, allowed, who, permission) in reversed(list(enumerate(aces))):
-            self.ex("insert into ace values(%s, %s, %s, %s, %s)", (docid, allowed, who, permission, order))
+        for order, (docid, allowed, who, permission) in reversed(
+            list(enumerate(aces))):
+            self.ex("insert into ace values(%s, %s, %s, %s, %s)",
+                    (docid, allowed, who, permission, order))
 
     def search(self, permission, *principals):
         return filteredsearch(self.cursor, "select * from docs", permission, principals)
@@ -48,6 +52,7 @@ class Tests(unittest.TestCase):
 
     def test_basic(self):
         self.ace((111, True, "bob", "read"))
+        self.ace((112, True, "sally", "edit"))
         self.assertEqual(self.search("read", "bob"),
                          [(111,),
                           (1111,),

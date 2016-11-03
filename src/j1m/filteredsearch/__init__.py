@@ -8,7 +8,11 @@ with recursive
                 r.docid, r.docid as id, p.parent_docid, a.allowed
          from text_results r
          join parents p using (docid)
-         left join ace a using (docid)
+         left join ace a on (
+           a.docid = r.docid and
+           a.permission in ('%(permission)s', '*') and
+           a.who in %(principals)s
+           )
          order by r.docid, a.ord
          ) base
      union all
@@ -19,7 +23,11 @@ with recursive
                from allowed, parents p
                where allowed.allowed is null and
                      allowed.parent_docid = p.docid) p
-              left join ace a on (a.docid = p.id)
+              left join ace a on (
+                a.docid = p.id and
+                a.permission in ('%(permission)s', '*') and
+                a.who in %(principals)s
+                )
          order by p.docid, a.ord
          ) recursive
      )
