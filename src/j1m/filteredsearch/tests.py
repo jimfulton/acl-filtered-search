@@ -10,9 +10,9 @@ class Tests(unittest.TestCase):
         conn = self.conn = psycopg2.connect('')
         cursor = self.cursor = conn.cursor()
         ex = self.ex = cursor.execute
-        ex("create temp table docs (docid int)");
-        ex("create temp table parents (docid int, parent_docid int)");
-        ex("create temp table ace (docid int, allowed bool, who varchar, permission varchar, ord int)");
+        ex("create temp table docs (docid int)")
+        ex("create temp table parents (docid int, parent_docid int)")
+        ex("create temp table ace (docid int, allowed bool, who varchar, permission varchar, ord int)")
 
         def newdoc(docid, parent_docid):
             ex("insert into docs values(%s)", (docid,))
