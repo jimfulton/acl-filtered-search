@@ -35,7 +35,8 @@ select docid %(extra)s from allowed where allowed
 
 """
 
-def filteredsearch(cursor, search, permission, principals, extra=''):
+def filteredsearch(cursor, search, permission, principals, extra='',
+                   template=template):
     principals = repr(principals).replace(',)', ')')
     sql = template % dict(
         search=search, permission=permission, principals=principals,
@@ -43,7 +44,11 @@ def filteredsearch(cursor, search, permission, principals, extra=''):
     if cursor is None:
         print(sql)
     else:
-        cursor.execute(sql)
+        try:
+            cursor.execute(sql)
+        except Exception:
+            print(sql)
+            raise
         return cursor.fetchall()
 
 path_template = """
@@ -63,15 +68,8 @@ where allowed
 """
 
 def path_filteredsearch(cursor, search, permission, principals, extra=''):
-    principals = repr(principals).replace(',)', ')')
-    sql = path_template % dict(
-        search=search, permission=permission, principals=principals,
-        extra=extra and ", " + extra)
-    if cursor is None:
-        print(sql)
-    else:
-        cursor.execute(sql)
-        return cursor.fetchall()
+    return filteredsearch(cursor, search, permission, principals, extra,
+                          template=path_template)
 
 upath_template = """
 select docid %(extra)s from (
@@ -90,12 +88,32 @@ where allowed
 """
 
 def upath_filteredsearch(cursor, search, permission, principals, extra=''):
-    principals = repr(principals).replace(',)', ')')
-    sql = upath_template % dict(
-        search=search, permission=permission, principals=principals,
-        extra=extra and ", " + extra)
-    if cursor is None:
-        print(sql)
-    else:
-        cursor.execute(sql)
-        return cursor.fetchall()
+    return filteredsearch(cursor, search, permission, principals, extra,
+                          template=upath_template)
+
+array_template = """
+with recursive
+     text_results as (%(search)s),
+     allowed(docid, id, parent_docid, allowed %(extra)s) as (
+         select r.docid, r.docid as id, p.parent_docid,
+                check_access(a.acl, array%(principals)s, '%(permission)s')
+                %(extra)s
+         from text_results r
+         join parents p using (docid)
+         left join acl a on (a.docid = r.docid)
+     union all
+         select allowed.docid, p.docid as id, p.parent_docid,
+                check_access(a.acl, array%(principals)s, '%(permission)s')
+                %(extra)s
+         from allowed, parents p
+         left join acl a on (a.docid = p.docid)
+         where allowed.allowed is null and
+               allowed.parent_docid = p.docid
+    )
+select docid %(extra)s from allowed where allowed
+"""
+
+def array_filteredsearch(cursor, search, permission, principals, extra=''):
+    principals = list(principals)
+    return filteredsearch(cursor, search, permission, principals, extra,
+                          template=array_template)

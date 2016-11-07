@@ -5,6 +5,31 @@ import unittest
 from j1m.filteredsearch import filteredsearch
 from j1m.filteredsearch import path_filteredsearch
 from j1m.filteredsearch import upath_filteredsearch
+from j1m.filteredsearch import array_filteredsearch
+
+check_access = """
+create or replace function check_access(
+  acl Access[],
+  principals varchar[],
+  permission varchar)
+  returns bool as $$
+begin
+  if acl is null then
+    return null;
+  end if;
+  for i in 1 .. array_upper(acl, 1)
+  loop
+    if acl[i].who = any(principals) and
+       (permission = any(acl[i].permissions) or
+        '*' = any(acl[i].permissions))
+    then
+       return acl[i].allowed;
+    end if;
+  end loop;
+  return null;
+end
+$$ language plpgsql;
+"""
 
 class Tests(unittest.TestCase):
 
@@ -22,6 +47,13 @@ class Tests(unittest.TestCase):
           )
         """)
 
+        ex("""
+        create type Access as (
+          allowed bool, who varchar, permissions varchar[]);
+        create temp table acl (docid int, acl Access[]);
+        """)
+        ex(check_access)
+
         def newdoc(docid, parent_docid):
             ex("insert into docs values(%s)", (docid,))
             ex("insert into parents values(%s, %s)", (docid, parent_docid))
@@ -31,8 +63,6 @@ class Tests(unittest.TestCase):
                 )):
                 ex("insert into upaths values(%s, %s, %s)",
                    (docid, ancestor_docid, ord))
-            ex("insert into ace values(%s, true, 'decoy', 'decoy', -1)",
-               (docid,))
 
         for i in range(1, 4):
             newdoc(i, 0)
@@ -55,24 +85,36 @@ class Tests(unittest.TestCase):
               from paths p join ace a using (docid)
               """)
 
+    def acl(self, docid, acl):
+        aces = []
+        acl = [(True, 'decoy', 'decoy')] + acl
+        for order, (access, who, permissions) in enumerate(acl):
+            if isinstance(permissions, str):
+                permissions = permissions,
 
-    def ace(self, *aces):
-        for order, (docid, allowed, who, permission) in reversed(
-            list(enumerate(aces))):
-            self.ex("insert into ace values(%s, %s, %s, %s, %s)",
-                    (docid, allowed, who, permission, order))
-            self.ex("insert into pace values(%s, %s, %s, %s, %s)",
-                    (path(docid) + '%', allowed, who, permission, order))
+            for permission in permissions:
+                self.ex("insert into ace values(%s, %s, %s, %s, %s)",
+                        (docid, access, who, permission, order))
+                self.ex("insert into pace values(%s, %s, %s, %s, %s)",
+                        (path(docid) + '%', access, who, permission, order))
+
+            permissions = ', '.join('"%s"' % p for p in permissions)
+            aces.append("row(%s, '%s', '{%s}')" % (
+                int(access), who, permissions))
+        self.ex(
+            "insert into acl values (%s, ARRAY[%s]::Access[])" % (
+                docid, ', '.join(aces)))
 
     def search(self, permission, *principals):
-        return filteredsearch(self.cursor,
-                              "select * from docs", permission, principals)
-    def path_search(self, permission, *principals):
-        return path_filteredsearch(self.cursor,
-                                   "select * from docs", permission, principals)
-    def upath_search(self, permission, *principals):
-        return upath_filteredsearch(
-            self.cursor, "select * from docs", permission, principals)
+        search = "select * from docs"
+        results = filteredsearch(self.cursor, search, permission, principals)
+        for f in (path_filteredsearch,
+                  upath_filteredsearch,
+                  array_filteredsearch,
+                  ):
+            self.assertEqual(f(self.cursor, search, permission, principals),
+                             results)
+        return results
 
     def tearDown(self):
         self.conn.close()
@@ -81,44 +123,29 @@ class Tests(unittest.TestCase):
         self.assertEqual(self.search("read", "bob"), [])
 
     def test_basic(self):
-        self.ace((111, True, "bob", "read"))
-        self.ace((112, True, "sally", "edit"))
+        self.acl(111, [(True, "bob", "read")])
+        self.acl(112, [(True, "sally", "edit")])
 
         expect = [(111,), (1111,), (1112,), (1113,), (11111,),
                   (11112,), (11113,), (11121,), (11122,), (11123,),
                   (11131,), (11132,), (11133,)]
         self.assertEqual(self.search("read", "bob"), expect)
-        self.assertEqual(self.path_search("read", "bob"), expect)
-        self.assertEqual(self.upath_search("read", "bob"), expect)
 
     def test_true_before_false(self):
-        self.ace((111, True, "bob", "read"),
-                 (111, False, "bob", "read"))
+        self.acl(111, [(True, "bob", "read"), (False, "bob", "read")])
         expect = [(111,), (1111,), (1112,), (1113,), (11111,),
                   (11112,), (11113,), (11121,), (11122,), (11123,),
                   (11131,), (11132,), (11133,)]
         self.assertEqual(self.search("read", "bob"), expect)
-        self.assertEqual(self.path_search("read", "bob"), expect)
-        self.assertEqual(self.upath_search("read", "bob"), expect)
 
     def test_false_before_true(self):
-        self.ace(
-            (111, False, "bob", "read"),
-            (111, True, "bob", "read"),
-            (11,  False, "bob", "read"),
-            (11,  True, "bob", "read"),
-            )
+        self.acl(111, [(False, "bob", "read"), (True, "bob", "read")])
+        self.acl(11,  [(False, "bob", "read"), (True, "bob", "read")])
         self.assertEqual(self.search("read", "bob"), [])
-        self.assertEqual(self.path_search("read", "bob"), [])
-        self.assertEqual(self.upath_search("read", "bob"), [])
 
     def test_no_acquire(self):
-        self.ace(
-            (11, True, "bob", "read"),
-            (11, False, "bob", "read"),
-            (111, False, "bob", "read"),
-            (111, True, "bob", "read"),
-            )
+        self.acl(11, [(True, "bob", "read"), (False, "bob", "read")])
+        self.acl(111, [(False, "bob", "read"), (True, "bob", "read")])
         expect = [(11,), (112,), (113,), (1121,), (1122,), (1123,),
                   (1131,), (1132,), (1133,), (11211,), (11212,),
                   (11213,), (11221,), (11222,), (11223,), (11231,),
@@ -126,18 +153,13 @@ class Tests(unittest.TestCase):
                   (11321,), (11322,), (11323,), (11331,), (11332,),
                   (11333,)]
         self.assertEqual(self.search("read", "bob"), expect)
-        self.assertEqual(self.path_search("read", "bob"), expect)
-        self.assertEqual(self.upath_search("read", "bob"), expect)
 
     def test_extra_noise(self):
-        self.ace(
-            (11, True, "bob", "read"),
-            (11, True, "all", "read"),
-            (11, True, "sally", "read"),
-            (11, False, "bob", "read"),
-            (111, False, "bob", "read"),
-            (111, True, "bob", "read"),
-            )
+        self.acl(11, [(True, "bob", "read"),
+                      (True, "all", "read"),
+                      (True, "sally", "read"),
+                      (False, "bob", "read")])
+        self.acl(111, [(False, "bob", "read"), (True, "bob", "read")])
         expect = [(11,), (112,), (113,), (1121,), (1122,), (1123,),
                   (1131,), (1132,), (1133,), (11211,), (11212,),
                   (11213,), (11221,), (11222,), (11223,), (11231,),
@@ -145,16 +167,13 @@ class Tests(unittest.TestCase):
                   (11321,), (11322,), (11323,), (11331,), (11332,),
                   (11333,)]
         self.assertEqual(self.search("read", "bob", "all"), expect)
-        self.assertEqual(self.path_search("read", "bob", "all"), expect)
 
     def test_all_permissions(self):
-        self.ace((111, True, "bob", "*"))
+        self.acl(111, [(True, "bob", "*")])
         expect = [(111,), (1111,), (1112,), (1113,), (11111,),
                   (11112,), (11113,), (11121,), (11122,),
                   (11123,), (11131,), (11132,), (11133,)]
         self.assertEqual(self.search("read", "bob"), expect)
-        self.assertEqual(self.path_search("read", "bob"), expect)
-        self.assertEqual(self.upath_search("read", "bob"), expect)
 
 
 def path(docid):
