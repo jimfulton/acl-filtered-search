@@ -1,0 +1,235 @@
+Sample results, including explain output:
+
+osf-karl=> \i load.sql
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+psql:load.sql:18: ERROR:  type "access" already exists
+CREATE TABLE
+CREATE FUNCTION
+INSERT 0 1
+...
+INSERT 0 1
+CREATE INDEX
+CREATE INDEX
+CREATE INDEX
+CREATE INDEX
+SELECT 96818
+CREATE INDEX
+ANALYZE
+ANALYZE
+ANALYZE
+ANALYZE
+ANALYZE
+ANALYZE
+Timing is on.
+base search
+ count
+-------
+   519
+(1 row)
+
+Time: 9.076 ms
+ count
+-------
+   519
+(1 row)
+
+Time: 4.885 ms
+                                                    QUERY PLAN
+------------------------------------------------------------------------------------------------------------------
+ Aggregate  (cost=1054.18..1054.19 rows=1 width=0)
+   ->  Bitmap Heap Scan on pgtextindex  (cost=840.92..1054.04 rows=56 width=0)
+         Recheck Cond: ((text_vector @@ '''zuma'''::tsquery) AND ((community_docid)::text = '-1601401983'::text))
+         ->  BitmapAnd  (cost=840.92..840.92 rows=56 width=0)
+               ->  Bitmap Index Scan on pgtextindex_index  (cost=0.00..60.27 rows=1103 width=0)
+                     Index Cond: (text_vector @@ '''zuma'''::tsquery)
+               ->  Bitmap Index Scan on pgtextindex_community_docid_index  (cost=0.00..780.36 rows=17592 width=0)
+                     Index Cond: ((community_docid)::text = '-1601401983'::text)
+(8 rows)
+
+Time: 1.022 ms
+recursive filtered search
+ count
+-------
+    90
+(1 row)
+
+Time: 21.458 ms
+ count
+-------
+    90
+(1 row)
+
+Time: 17.644 ms
+                                                                                                                 QUERY PLAN
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Aggregate  (cost=3174.67..3174.68 rows=1 width=0)
+   ->  CTE Scan on allowed  (cost=3172.67..3174.19 rows=38 width=4)
+         Filter: allowed
+         CTE text_results
+           ->  Bitmap Heap Scan on pgtextindex  (cost=840.92..1054.04 rows=56 width=4)
+                 Recheck Cond: ((text_vector @@ '''zuma'''::tsquery) AND ((community_docid)::text = '-1601401983'::text))
+                 ->  BitmapAnd  (cost=840.92..840.92 rows=56 width=0)
+                       ->  Bitmap Index Scan on pgtextindex_index  (cost=0.00..60.27 rows=1103 width=0)
+                             Index Cond: (text_vector @@ '''zuma'''::tsquery)
+                       ->  Bitmap Index Scan on pgtextindex_community_docid_index  (cost=0.00..780.36 rows=17592 width=0)
+                             Index Cond: ((community_docid)::text = '-1601401983'::text)
+         CTE allowed
+           ->  Recursive Union  (cost=1730.10..2118.63 rows=76 width=13)
+                 ->  Subquery Scan on base  (cost=1730.10..1730.94 rows=56 width=13)
+                       ->  Unique  (cost=1730.10..1730.38 rows=56 width=13)
+                             ->  Sort  (cost=1730.10..1730.24 rows=56 width=13)
+                                   Sort Key: r.docid, a.ord
+                                   ->  Nested Loop Left Join  (cost=0.42..1728.47 rows=56 width=13)
+                                         ->  Nested Loop  (cost=0.00..330.80 rows=56 width=8)
+                                               ->  CTE Scan on text_results r  (cost=0.00..1.12 rows=56 width=4)
+                                               ->  Index Scan using parents_docid_idx on parents p  (cost=0.00..5.88 rows=1 width=8)
+                                                     Index Cond: (docid = r.docid)
+                                         ->  Index Scan using ace_docid_permission_who_idx on ace a  (cost=0.42..24.95 rows=1 width=9)
+                                               Index Cond: ((docid = r.docid) AND ((permission)::text = ANY ('{edit,*}'::text[])) AND ((who)::text = ANY ('{USER,GROUP,system.Everyone}'::text[])))
+                 ->  Subquery Scan on recursive  (cost=38.58..38.62 rows=2 width=13)
+                       ->  Unique  (cost=38.58..38.60 rows=2 width=17)
+                             ->  Sort  (cost=38.58..38.59 rows=3 width=17)
+                                   Sort Key: allowed_1.docid, a_1.ord
+                                   ->  Nested Loop Left Join  (cost=0.42..38.56 rows=3 width=17)
+                                         ->  Nested Loop  (cost=0.00..35.29 rows=3 width=12)
+                                               ->  WorkTable Scan on allowed allowed_1  (cost=0.00..11.20 rows=3 width=8)
+                                                     Filter: (allowed IS NULL)
+                                               ->  Index Scan using parents_docid_idx on parents p_1  (cost=0.00..8.02 rows=1 width=8)
+                                                     Index Cond: (docid = allowed_1.parent_docid)
+                                         ->  Index Scan using ace_docid_permission_who_idx on ace a_1  (cost=0.42..1.08 rows=1 width=9)
+                                               Index Cond: (docid = p_1.docid)
+                                               Filter: (((permission)::text = ANY ('{edit,*}'::text[])) AND ((who)::text = ANY ('{USER,GROUP,system.Everyone}'::text[])))
+(37 rows)
+
+Time: 2.376 ms
+path filtered search
+ count
+-------
+    90
+(1 row)
+
+Time: 776.545 ms
+ count
+-------
+    90
+(1 row)
+
+Time: 785.920 ms
+                                                                                                  QUERY PLAN
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Aggregate  (cost=3072.26..3072.27 rows=1 width=0)
+   ->  Subquery Scan on _  (cost=3071.48..3072.20 rows=24 width=0)
+         Filter: _.allowed
+         ->  Unique  (cost=3071.48..3071.72 rows=48 width=63)
+               ->  Sort  (cost=3071.48..3071.60 rows=48 width=63)
+                     Sort Key: pgtextindex.docid, a.pathp, a.ord
+                     ->  Nested Loop  (cost=948.37..3070.14 rows=48 width=63)
+                           Join Filter: ((p.path)::text ~~ a.pathp)
+                           ->  Bitmap Heap Scan on pace a  (cost=107.16..1494.94 rows=3186 width=59)
+                                 Recheck Cond: (((permission)::text = ANY ('{edit,*}'::text[])) AND ((who)::text = ANY ('{USER,GROUP,system.Everyone}'::text[])))
+                                 ->  Bitmap Index Scan on pace_permission_who_idx  (cost=0.00..106.37 rows=3186 width=0)
+                                       Index Cond: (((permission)::text = ANY ('{edit,*}'::text[])) AND ((who)::text = ANY ('{USER,GROUP,system.Everyone}'::text[])))
+                           ->  Materialize  (cost=841.20..1431.84 rows=3 width=62)
+                                 ->  Nested Loop  (cost=841.20..1431.82 rows=3 width=62)
+                                       ->  Bitmap Heap Scan on pgtextindex  (cost=840.92..1054.04 rows=56 width=4)
+                                             Recheck Cond: ((text_vector @@ '''zuma'''::tsquery) AND ((community_docid)::text = '-1601401983'::text))
+                                             ->  BitmapAnd  (cost=840.92..840.92 rows=56 width=0)
+                                                   ->  Bitmap Index Scan on pgtextindex_index  (cost=0.00..60.27 rows=1103 width=0)
+                                                         Index Cond: (text_vector @@ '''zuma'''::tsquery)
+                                                   ->  Bitmap Index Scan on pgtextindex_community_docid_index  (cost=0.00..780.36 rows=17592 width=0)
+                                                         Index Cond: ((community_docid)::text = '-1601401983'::text)
+                                       ->  Index Scan using paths_pkey on paths p  (cost=0.29..6.74 rows=1 width=62)
+                                             Index Cond: (docid = pgtextindex.docid)
+(23 rows)
+
+Time: 1.742 ms
+unnested path filtered search
+ count
+-------
+    90
+(1 row)
+
+Time: 22.237 ms
+ count
+-------
+    90
+(1 row)
+
+Time: 18.878 ms
+                                                                                             QUERY PLAN
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Aggregate  (cost=2130.58..2130.59 rows=1 width=0)
+   ->  Subquery Scan on _  (cost=2130.51..2130.57 rows=2 width=0)
+         Filter: _.allowed
+         ->  Unique  (cost=2130.51..2130.53 rows=4 width=13)
+               ->  Sort  (cost=2130.51..2130.52 rows=4 width=13)
+                     Sort Key: pgtextindex.docid, p.ord, a.ord
+                     ->  Nested Loop  (cost=845.31..2130.47 rows=4 width=13)
+                           ->  Nested Loop  (cost=844.89..2117.80 rows=14 width=12)
+                                 ->  Bitmap Heap Scan on pgtextindex  (cost=840.92..1054.04 rows=56 width=4)
+                                       Recheck Cond: ((text_vector @@ '''zuma'''::tsquery) AND ((community_docid)::text = '-1601401983'::text))
+                                       ->  BitmapAnd  (cost=840.92..840.92 rows=56 width=0)
+                                             ->  Bitmap Index Scan on pgtextindex_index  (cost=0.00..60.27 rows=1103 width=0)
+                                                   Index Cond: (text_vector @@ '''zuma'''::tsquery)
+                                             ->  Bitmap Index Scan on pgtextindex_community_docid_index  (cost=0.00..780.36 rows=17592 width=0)
+                                                   Index Cond: ((community_docid)::text = '-1601401983'::text)
+                                 ->  Bitmap Heap Scan on upaths p  (cost=3.97..18.95 rows=5 width=12)
+                                       Recheck Cond: (docid = pgtextindex.docid)
+                                       ->  Bitmap Index Scan on upaths_docid_idx  (cost=0.00..3.97 rows=5 width=0)
+                                             Index Cond: (docid = pgtextindex.docid)
+                           ->  Index Scan using ace_docid_permission_who_idx on ace a  (cost=0.42..0.89 rows=1 width=9)
+                                 Index Cond: (docid = p.ancestor_docid)
+                                 Filter: (((permission)::text = ANY ('{edit,*}'::text[])) AND ((who)::text = ANY ('{USER,GROUP,system.Everyone}'::text[])))
+(22 rows)
+
+Time: 1.852 ms
+array recursive filtered search
+ count
+-------
+    90
+(1 row)
+
+Time: 17.082 ms
+ count
+-------
+    90
+(1 row)
+
+Time: 14.650 ms
+                                                        QUERY PLAN
+--------------------------------------------------------------------------------------------------------------------------
+ Aggregate  (cost=2089.37..2089.38 rows=1 width=0)
+   ->  CTE Scan on allowed  (cost=2087.11..2088.83 rows=43 width=4)
+         Filter: allowed
+         CTE text_results
+           ->  Bitmap Heap Scan on pgtextindex  (cost=840.92..1054.04 rows=56 width=4)
+                 Recheck Cond: ((text_vector @@ '''zuma'''::tsquery) AND ((community_docid)::text = '-1601401983'::text))
+                 ->  BitmapAnd  (cost=840.92..840.92 rows=56 width=0)
+                       ->  Bitmap Index Scan on pgtextindex_index  (cost=0.00..60.27 rows=1103 width=0)
+                             Index Cond: (text_vector @@ '''zuma'''::tsquery)
+                       ->  Bitmap Index Scan on pgtextindex_community_docid_index  (cost=0.00..780.36 rows=17592 width=0)
+                             Index Cond: ((community_docid)::text = '-1601401983'::text)
+         CTE allowed
+           ->  Recursive Union  (cost=0.28..1033.06 rows=86 width=411)
+                 ->  Nested Loop Left Join  (cost=0.28..666.16 rows=56 width=407)
+                       ->  Nested Loop  (cost=0.00..330.80 rows=56 width=8)
+                             ->  CTE Scan on text_results r  (cost=0.00..1.12 rows=56 width=4)
+                             ->  Index Scan using parents_docid_idx on parents p  (cost=0.00..5.88 rows=1 width=8)
+                                   Index Cond: (docid = r.docid)
+                       ->  Index Scan using acl_pkey on acl a  (cost=0.28..5.73 rows=1 width=403)
+                             Index Cond: (docid = r.docid)
+                 ->  Nested Loop Left Join  (cost=0.00..36.52 rows=3 width=411)
+                       ->  Nested Loop  (cost=0.00..35.29 rows=3 width=12)
+                             ->  WorkTable Scan on allowed allowed_1  (cost=0.00..11.20 rows=3 width=8)
+                                   Filter: (allowed IS NULL)
+                             ->  Index Scan using parents_docid_idx on parents p_1  (cost=0.00..8.02 rows=1 width=8)
+                                   Index Cond: (docid = allowed_1.parent_docid)
+                       ->  Index Scan using acl_docid_idx on acl a_1  (cost=0.00..0.15 rows=1 width=403)
+                             Index Cond: (docid = p_1.docid)
+(28 rows)
+
+Time: 1.735 ms
+osf-karl=>
