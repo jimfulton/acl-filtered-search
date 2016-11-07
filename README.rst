@@ -113,7 +113,7 @@ requirement of the base query was that the results contained a
 based on docids.
 
 Simple recursive algorithm using parents and flattened ACEs
-----------------------------------------------------------
+-----------------------------------------------------------
 
 This approach used a parents table is used to represent hierarchy::
 
